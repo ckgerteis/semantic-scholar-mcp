@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If this software supports your research, please cite it."
+title: "semantic-scholar-mcp: an MCP server for the Semantic Scholar Academic Graph"
+abstract: >-
+  A Model Context Protocol stdio server exposing the Semantic Scholar Academic Graph (Allen Institute for AI) as nine tools for
+  works, authors, sources and citation relations. Every query can be deposited to
+  an append-only, hash-chained receipt ledger. Part of a family of bibliographic
+  MCP servers sharing one vendored ledger module.
+type: software
+authors:
+  - family-names: Gerteis
+    given-names: Christopher
+    affiliation: SOAS University of London
+    orcid: "https://orcid.org/0000-0003-4977-6152"
+version: 1.0.0
+date-released: "2026-08-19"
+license: MIT
+repository-code: "https://github.com/ckgerteis/semantic-scholar-mcp"
+keywords:
+  - model context protocol
+  - bibliometrics
+  - digital humanities
+  - bibliographic search

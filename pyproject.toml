@@ -1,0 +1,44 @@
+[project]
+name = "semantic-scholar-mcp"
+version = "1.0.0"
+description = "MCP stdio server for the Semantic Scholar Academic Graph API."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Christopher Gerteis", email = "christopher.gerteis@gmail.com" },
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "semantic-scholar",
+    "citation-graph",
+    "bibliometrics",
+    "digital-humanities",
+    "bibliographic-search",
+]
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.7.0",
+]
+
+[project.urls]
+Homepage = "https://www.christophergerteis.net"
+Repository = "https://github.com/ckgerteis/semantic-scholar-mcp"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# src layout: the wheel contains the package and nothing else.
+#
+# `packages = ["."]` with an `include` list does NOT constrain the wheel —
+# `include` filters within the selected root rather than replacing it — and it
+# installs `server.py` and `mediation.py` as top-level modules, so any two of
+# these servers in one environment overwrite each other.
+# `include` alone does not constrain the wheel; `only-include` selects. ledger.py
+# must be listed — omitting it does not fail the build, mediation/server just lose
+# the deposit silently.
+[tool.hatch.build.targets.wheel]
+only-include = ["server.py", "ledger.py"]
