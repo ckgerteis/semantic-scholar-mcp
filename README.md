@@ -4,6 +4,14 @@ MCP stdio server for the Semantic Scholar Academic Graph API.
 
 Data via Semantic Scholar, Allen Institute for AI.
 
+## What this is for
+
+The Semantic Scholar Academic Graph, reached through citation traversal in both directions: the works a paper cites, and the works that went on to cite it. Look up as many as five hundred papers in a single call when a bibliography needs resolving.
+
+The recommendation tools answer a question searching cannot: hand it two or three papers you already trust and it proposes adjacent work, which is how you enter a literature whose vocabulary you have not yet learned.
+
+Records carry abstracts, influential-citation counts, open-access links, and machine-generated one-line summaries useful for triage. Where [`openalex-mcp`](https://github.com/ckgerteis/openalex-mcp) is strongest on institutions and geography, this is strongest on the shape of a citation network.
+
 ## Install
 
 Flat layout, matching how the server is deployed: `server.py` and `ledger.py`
