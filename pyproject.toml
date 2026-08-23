@@ -1,6 +1,6 @@
 [project]
 name = "semantic-scholar-mcp"
-version = "1.0.0"
+version = "1.1.0"
 description = "MCP stdio server for the Semantic Scholar Academic Graph API."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,6 +23,10 @@ dependencies = [
     "pydantic>=2.7.0",
 ]
 
+[project.scripts]
+semantic-scholar-mcp = "semantic_scholar_mcp:main"
+semantic-scholar-mcp-ledger = "semantic_scholar_mcp.ledger:_cli"
+
 [project.urls]
 Homepage = "https://www.christophergerteis.net"
 Repository = "https://github.com/ckgerteis/semantic-scholar-mcp"
@@ -33,12 +37,20 @@ build-backend = "hatchling.build"
 
 # src layout: the wheel contains the package and nothing else.
 #
-# `packages = ["."]` with an `include` list does NOT constrain the wheel —
-# `include` filters within the selected root rather than replacing it — and it
-# installs `server.py` and `mediation.py` as top-level modules, so any two of
-# these servers in one environment overwrite each other.
-# `include` alone does not constrain the wheel; `only-include` selects. ledger.py
-# must be listed — omitting it does not fail the build, mediation/server just lose
-# the deposit silently.
+# The flat layout this replaces installed `server.py` and `ledger.py` as
+# *top-level* modules. Any two servers of this family in one environment
+# therefore overwrote each other, and `pip check` reported nothing wrong — the
+# later install simply won, silently, and the survivor answered under the wrong
+# server's name. Namespacing under a package is what lets them coexist.
 [tool.hatch.build.targets.wheel]
-only-include = ["server.py", "ledger.py"]
+packages = ["src/semantic_scholar_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/README.md",
+    "/LICENSE",
+    "/CITATION.cff",
+    "/CHANGELOG.md",
+    "/.env.example",
+]
