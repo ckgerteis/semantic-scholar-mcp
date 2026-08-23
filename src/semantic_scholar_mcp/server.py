@@ -24,7 +24,7 @@ try:  # mcp SDK 1.x
 except ModuleNotFoundError:  # mcp SDK 2.x removed mcp.server.fastmcp
     from mcp.server.mcpserver import MCPServer as _MCPServer
 
-import ledger
+from . import ledger
 
 # ==============================================================================
 # Configuration
@@ -146,9 +146,15 @@ def _format_paper(p: Dict) -> str:
 # Server Initialization
 # ==============================================================================
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
-mcp = _MCPServer("semantic_scholar_mcp")
+# mcp 1.x's FastMCP takes no `version`; 2.x's MCPServer does. Passed where it is
+# accepted, because a server that answers `initialize` with an empty version
+# string cannot be cited by the disclosure that has to name the build it ran.
+try:
+    mcp = _MCPServer("semantic_scholar_mcp", version=__version__)
+except TypeError:  # mcp SDK 1.x
+    mcp = _MCPServer("semantic_scholar_mcp")
 
 # ==============================================================================
 # Input Models
@@ -519,5 +525,10 @@ async def s2_recommend_multi(params: MultiRecommendInput) -> str:
 # Entry point
 # ==============================================================================
 
-if __name__ == "__main__":
+def main() -> None:
+    """Console-script entry point (`semantic-scholar-mcp`)."""
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

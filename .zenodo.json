@@ -3,7 +3,7 @@
   "upload_type": "software",
   "access_right": "open",
   "license": "MIT",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A FastMCP stdio server exposing the Semantic Scholar Academic Graph (Allen Institute for AI) as nine tools. Queries can be deposited to an append-only, hash-chained receipt ledger. Works with any MCP-compatible client.",
   "creators": [
     {
