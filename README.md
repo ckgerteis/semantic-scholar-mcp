@@ -46,6 +46,23 @@ not use `semantic-scholar-mcp --help` as the check: unknown arguments are ignore
 server starts, reads end-of-input and exits 0, so it reports success whatever
 the state of the code.
 
+### The whole family at once
+
+`install.ps1` — vendored byte-identical into all six repositories — installs any
+or all of `cinii`, `jstage`, `ndl`, `korea_scholarship`, `openalex` and
+`semantic_scholar` into one environment, asks once for a receipts folder, and
+registers them all against it.
+
+```powershell
+.\install.ps1                                   # all six
+.\install.ps1 -Servers semantic_scholar -ReceiptsDir "D:\research\receipts"
+```
+
+It reads a sibling checkout where one exists and fetches the rest from GitHub,
+carries across any credentials already registered rather than asking again, and
+stops rather than guessing if the servers already registered disagree about where
+the receipts go.
+
 ## Tools
 
 | Tool |
@@ -101,16 +118,39 @@ logging failure is swallowed rather than raised — a search matters more than
 the record of it. Secrets are redacted before a line is composed.
 
 ```
-MCP_RECEIPT_LOG=C:\path\to\receipts.jsonl
+MCP_RECEIPT_DIR=C:\path\to\receipts        # a folder, not a file
 MCP_RECEIPT_SESSION=project-or-article-slug
-MCP_RECEIPT_STRICT=1        # optional: make logging failure raise
+MCP_RECEIPT_STRICT=1                         # optional: make logging failure raise
+MCP_RECEIPT_LOG=C:\path\to\receipts.jsonl  # legacy single file; ignored when _DIR is set
 ```
 
-Verify a deposited log's hash chain:
+**A folder, and one file per server.** `MCP_RECEIPT_DIR` points at a directory
+and each server writes its own `<server>.jsonl` inside it. That is not tidiness.
+Appending is read-the-last-hash-then-write, and the lock around it is a threading
+lock, which holds within one process and not between several — six servers are
+six processes, and two answering at the same moment will both read the same
+predecessor and both claim it. Measured, not theorised: six processes writing 150
+lines to one file produced fourteen forks. `MCP_RECEIPT_LOG` still works and is
+still correct for a single server; it is the wrong shape for a family.
+
+`install.ps1` sets this up for all six and writes a README into the folder.
+
+Verify one chain, or the whole folder:
 
 ```bash
-semantic-scholar-mcp-ledger verify receipts.jsonl
+semantic-scholar-mcp-ledger verify      receipts/semantic-scholar.jsonl
+semantic-scholar-mcp-ledger verify-dir  receipts
+semantic-scholar-mcp-ledger manifest    receipts        # writes receipts/manifest.json
 ```
+
+`verify` exits non-zero on failure and says which kind it found: a **fork**
+(concurrent writers — a configuration fault, and every line is still there), a
+**missing** line, a **reordering**, or **tamper** (a line that does not hash to
+its own content). Only the last is a claim about honesty, and reporting them
+alike would invite a reader to mistake one for the other. The manifest is the
+object to cite: one description of the whole deposit — per-file line counts,
+first and last timestamps, terminal hashes, and combined totals by server,
+script and session.
 
 ## MCP SDK compatibility
 
