@@ -14,14 +14,37 @@ Records carry abstracts, influential-citation counts, open-access links, and mac
 
 ## Install
 
-Flat layout, matching how the server is deployed: `server.py` and `ledger.py`
-side by side, run by path.
+The package installs a `semantic-scholar-mcp` console script. It is namespaced, so it can
+share one environment with the rest of this server family.
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -e .
+python3 -m venv .venv
+.venv/bin/pip install .
 ```
 
-Then point Claude Desktop at `python server.py` (see below).
+On Windows:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\pip.exe install .
+```
+
+Or straight from the repository, without cloning:
+
+```bash
+uvx --from "git+https://github.com/ckgerteis/semantic-scholar-mcp" semantic-scholar-mcp
+```
+
+Verify the install:
+
+```bash
+.venv/bin/python -c "import semantic_scholar_mcp; print(semantic_scholar_mcp.__version__)"
+```
+
+That fails loudly if the package or one of its vendored modules is missing. Do
+not use `semantic-scholar-mcp --help` as the check: unknown arguments are ignored, the
+server starts, reads end-of-input and exits 0, so it reports success whatever
+the state of the code.
 
 ## Tools
 
@@ -45,12 +68,15 @@ SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_api_key
 
 ### Claude Desktop
 
+Add an entry to `%APPDATA%\Claude\claude_desktop_config.json` under
+`mcpServers`, pointing at the console script in the environment you installed
+into. On macOS or Linux use the absolute path to `.venv/bin/semantic-scholar-mcp`.
+
 ```json
 {
   "mcpServers": {
     "semantic-scholar": {
-      "command": "C:\\path\\to\\.venv\\Scripts\\python.exe",
-      "args": ["C:\\path\\to\\semantic_scholar_mcp\\server.py"],
+      "command": "C:\\path\\to\\.venv\\Scripts\\semantic-scholar-mcp.exe",
       "env": {
         "SEMANTIC_SCHOLAR_API_KEY": "your_semantic_scholar_api_key"
       }
@@ -58,6 +84,14 @@ SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_api_key
   }
 }
 ```
+
+**Changed in 1.1.0.** Earlier versions were registered by path —
+`"command": "…\\python.exe", "args": ["…\\server.py"]`. That entry will not
+start this version, because `server.py` is now a module inside a package rather
+than a script beside its imports. Replace it with the console script above.
+
+Restart Claude Desktop. The nine tools should appear under "semantic-scholar" in the
+tool list.
 
 ## Query receipts
 
@@ -75,7 +109,7 @@ MCP_RECEIPT_STRICT=1        # optional: make logging failure raise
 Verify a deposited log's hash chain:
 
 ```bash
-python ledger.py verify receipts.jsonl
+semantic-scholar-mcp-ledger verify receipts.jsonl
 ```
 
 ## MCP SDK compatibility
