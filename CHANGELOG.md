@@ -7,6 +7,51 @@ the text and, where a version DOI exists, cited by it.
 Releases earlier than those below are on the repository's releases page; this
 file begins where the record is precise enough to be worth writing down.
 
+## 2.0.0 — 2026-09-04
+
+**Breaking: every tool now returns the family's JSON response envelope.** 1.x
+returned formatted markdown. Any consumer that parsed that text must be
+rewritten; the input models and tool names are unchanged.
+
+- **`mediation.py` and `response-schema.json` vendored**, byte-identical to the
+  copies in cinii-mcp, jstage-mcp, ndl-mcp, korea-scholarship-mcp and
+  openalex-mcp. The README's claim that the family shares one envelope is now
+  true of this server. Every response carries `searched_for` on term
+  searches, a typed `query`, `matching_mode`, graduated `result.breadth`,
+  per-item `matched_in`, typed diagnostics, a receipt and the attribution line.
+- **Receipts go through `emit()`.** The per-request `ledger.record_request`
+  call is gone; the envelope itself is deposited, and it reports
+  `RECEIPT_NOT_DEPOSITED` or `RECEIPT_WRITE_FAILED` when a deposit did not
+  happen. The 1.1.0 gap — batch and multi-seed recommendation receipts not
+  recording which identifiers were asked for — is closed: the IDs are in
+  `query.params` and so under the receipt hash.
+- **Matching modes named for what the API does.** `relevance_ranked` for
+  search, `filter_exact` for citation and authorship traversals,
+  `identifier_lookup` for fetches and batch, `similarity_ranked` for the
+  recommender.
+- **A returned count is never passed off as a corpus count.** Endpoints that
+  report no total (citations, references, an author's papers, batch,
+  recommendations) set `result.total` to the returned count and raise
+  `TOTAL_NOT_REPORTED`, saying whether a further page exists.
+- **Titles typed by script**, since the API reports no language: kana or
+  Hangul decide `ja` or `ko`, Latin goes to `en`, han-only stays untyped in
+  `extra.title`.
+- **Typed diagnostics** replace `"Error: …"` strings: `ZERO_RESULTS`,
+  `PARTIAL_NOT_FOUND`, `NOT_FOUND`, `RATE_LIMITED`, `API_ERROR`,
+  `TRANSPORT_ERROR`. A 200 whose body is not JSON is `API_ERROR` rather than
+  an uncaught exception.
+- **The rate limiter is now atomic.** 1.x read the last-request time, slept,
+  and wrote it back with nothing held across the three steps, so two
+  concurrent tool calls could both pass the check and fire together. An
+  `asyncio.Lock` now spans check, sleep and request.
+- httpx request logging is silenced, as in the rest of the family: the key
+  travels in a header, but the search term travels in the URL.
+- **Tests.** `tests/test_server.py` runs against recorded responses and
+  validates every envelope against the schema. No network, no key.
+- Known limit: the receipt's `result_ids` reads DOIs only, so a paper without
+  one is fixed by the receipt hash and `extra.s2_paper_id` but not listed.
+  Extending `make_receipt` is a family-wide schema change and is deferred.
+
 ## 1.1.0 — 2026-08-23
 
 **Not released.** No tag was cut and no Zenodo record exists for this version, so

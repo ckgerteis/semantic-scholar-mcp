@@ -73,17 +73,50 @@ installed, so two envelope versions cannot end up in one environment unnoticed.
 
 ## Tools
 
-| Tool |
-| --- |
-| `s2_author_papers` |
-| `s2_batch_papers` |
-| `s2_citations` |
-| `s2_get_author` |
-| `s2_get_paper` |
-| `s2_recommend_multi` |
-| `s2_recommend_single` |
-| `s2_search_authors` |
-| `s2_search_papers` |
+| Tool | Purpose |
+| --- | --- |
+| `s2_search_papers` | Papers by keyword, with year, field-of-study, citation-count and open-access filters |
+| `s2_get_paper` | One paper by S2 ID, DOI, ArXiv ID or URL |
+| `s2_batch_papers` | Up to 500 papers by ID in one call |
+| `s2_citations` | Papers citing a paper, or the papers it cites |
+| `s2_search_authors` | Authors by name |
+| `s2_get_author` | One author by S2 Author ID |
+| `s2_author_papers` | An author's papers, paginated |
+| `s2_recommend_single` | Papers similar to one seed paper |
+| `s2_recommend_multi` | Papers similar to a set of seeds, unlike optional negatives |
+
+All nine return one typed JSON response envelope — see [Response format](#response-format). (Releases before 2.0.0 returned formatted markdown text; that is a breaking change, not a formatting preference.)
+
+## Response format
+
+Every tool returns one JSON response envelope, built by `mediation.py` and defined in [`response-schema.json`](response-schema.json). Schema version 2.3.0. The same module and schema are vendored byte-identically across the server family, so an envelope from one server can be read by a consumer written for another.
+
+The envelope reports how the search was made, not only what it found:
+
+- **`searched_for`** — on the two term searches (`s2_search_papers`, `s2_search_authors`), the term actually sent, its detected script, and the matching mode, hoisted to the top of the envelope so a relaying client cannot drop it. Lookups, citation traversals, batch and recommendations omit it: they were handed identifiers and chose no term.
+- **`query`** — `input_terms` as supplied, `normalized` as sent, and the detected `script`. For batch and multi-seed recommendations the identifiers asked for are in `params`, so the receipt hash fixes the request and not only the answer. The key is sent as a header and never enters `params`.
+- **`matching_mode`** — `relevance_ranked` for term searches (title, abstract and venue, ranked; `result.total` is the API's estimate); `filter_exact` for citation and authorship traversals; `identifier_lookup` for fetches and batch; `similarity_ranked` for the recommender.
+- **`result.breadth`** — `none`, `narrow` (1–50), `broad` (51–1000), `very_broad` (>1000).
+- **`items[]`** — the family's item shape. Semantic Scholar reports no language, so script decides the typed title slot: kana or Hangul place a title in `ja` or `ko`, Latin script in `en`, and a han-only title is left untyped rather than guessed; `extra.title` always carries the text. S2 and Corpus IDs, ArXiv and PubMed IDs, citation and influential-citation counts, fields of study, TL;DR and the abstract sit in `extra`; the DOI in `ids.doi`; the S2 page in `ids.url_en`; an open-access PDF in `ids.fulltext_url`. Author records use `record_type` `author`.
+- **`receipt`** — an ISO 8601 timestamp, a SHA-256 over the normalised query and its parameters, and the DOIs returned. Papers without a DOI are identified only in `extra.s2_paper_id`, which the receipt's `result_ids` does not yet read.
+- **`attribution`** — the required credit line, in every response.
+
+### Diagnostic codes
+
+Typed and closed. A diagnostic is never prose the client has to parse.
+
+| Code | Level | Meaning |
+| --- | --- | --- |
+| `OK` | info | Records returned; nothing to flag. |
+| `TOTAL_NOT_REPORTED` | info | The endpoint reports no corpus total (citations, references, an author's papers, batch, recommendations); `result.total` is the returned count, and the message says whether the API offers a further page. |
+| `ZERO_RESULTS` | warning | No records. Coverage of non-English humanities scholarship is thin; consult the CiNii, J-STAGE, NDL and KCI servers before concluding the literature is absent. |
+| `PARTIAL_NOT_FOUND` | warning | Batch: some identifiers resolved to no record; they are listed in `coverage_note`. |
+| `NOT_FOUND` | warning | A lookup by identifier answered 404. |
+| `RATE_LIMITED` | error | The API answered 429. Keyless callers share one pool and search endpoints are throttled first; a free key gives 1 request/second, which the server enforces. |
+| `API_ERROR` | error | The API answered, and answered with an error (or with a 200 that was not JSON). |
+| `TRANSPORT_ERROR` | error | The request did not complete. Kept distinct from `API_ERROR` because a failed search has an unknown result and must never be written up as an absence. |
+| `RECEIPT_NOT_DEPOSITED` | info | The response was not written to the query ledger, because no receipts destination is configured. |
+| `RECEIPT_WRITE_FAILED` | warning | A receipts destination is set, the write was attempted, and it did not land. |
 
 ## Configuration
 
@@ -110,6 +143,8 @@ into. On macOS or Linux use the absolute path to `.venv/bin/semantic-scholar-mcp
 }
 ```
 
+**Changed in 2.0.0.** Tools return the JSON envelope rather than markdown; any consumer that parsed the 1.x text must be rewritten.
+
 **Changed in 1.1.0.** Earlier versions were registered by path —
 `"command": "…\\python.exe", "args": ["…\\server.py"]`. That entry will not
 start this version, because `server.py` is now a module inside a package rather
@@ -120,7 +155,7 @@ tool list.
 
 ## Query receipts
 
-Every query can be deposited to an append-only, hash-chained JSONL log by
+Every envelope can be deposited to an append-only, hash-chained JSONL log by
 `semantic_scholar_mcp.ledger`. It is **off unless `MCP_RECEIPT_DIR` (or the legacy `MCP_RECEIPT_LOG`) is set**, and a
 logging failure is swallowed rather than raised — a search matters more than
 the record of it. Secrets are redacted before a line is composed.
@@ -159,6 +194,15 @@ alike would invite a reader to mistake one for the other. The manifest is the
 object to cite: one description of the whole deposit — per-file line counts,
 first and last timestamps, terminal hashes, and combined totals by server,
 script and session.
+
+## Tests
+
+```bash
+.venv/bin/pip install pytest jsonschema
+.venv/bin/python -m pytest -q tests
+```
+
+The suite runs against recorded Semantic Scholar responses under `tests/fixtures/` (captured 2026-09-04 without a key) and validates every envelope against `response-schema.json`; it needs no network and no key. `RUN_LIVE=1` adds one request to the live API.
 
 ## MCP SDK compatibility
 
