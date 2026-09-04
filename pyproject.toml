@@ -9,27 +9,49 @@ authors = [
     { name = "Christopher Gerteis", email = "christopher.gerteis@gmail.com" },
 ]
 keywords = [
+    "bibliographic-search",
+    "bibliometrics",
+    "citation-graph",
+    "digital-humanities",
     "mcp",
     "model-context-protocol",
+    "query-receipts",
+    "scholarly-metadata",
     "semantic-scholar",
-    "citation-graph",
-    "bibliometrics",
-    "digital-humanities",
-    "bibliographic-search",
 ]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: Indexing",
+]
+
 dependencies = [
     "mcp[cli]>=1.2.0",
     "httpx>=0.27.0",
     "pydantic>=2.7.0",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=8", "jsonschema>=4"]
+
 [project.scripts]
 semantic-scholar-mcp = "semantic_scholar_mcp:main"
 semantic-scholar-mcp-ledger = "semantic_scholar_mcp.ledger:_cli"
 
 [project.urls]
-Homepage = "https://www.christophergerteis.net"
+Homepage = "https://github.com/ckgerteis/semantic-scholar-mcp"
 Repository = "https://github.com/ckgerteis/semantic-scholar-mcp"
+Changelog = "https://github.com/ckgerteis/semantic-scholar-mcp/blob/main/CHANGELOG.md"
+Issues = "https://github.com/ckgerteis/semantic-scholar-mcp/issues"
+Suite = "https://github.com/ckgerteis/bibliograph-mcp"
 
 [build-system]
 requires = ["hatchling"]
@@ -53,6 +75,8 @@ include = [
     "/CITATION.cff",
     "/CHANGELOG.md",
     "/install.ps1",
+    "/install.py",
+    "/mcpb",
     "/.env.example",
     "/response-schema.json",
     "/tests",

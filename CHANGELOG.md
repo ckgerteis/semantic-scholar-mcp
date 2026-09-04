@@ -13,6 +13,17 @@ file begins where the record is precise enough to be worth writing down.
 returned formatted markdown. Any consumer that parsed that text must be
 rewritten; the input models and tool names are unchanged.
 
+- **Released on GitHub as a package.** `.github/workflows/release.yml` runs
+  on a `vX.Y.Z` tag: tests on three OSes, wheel and sdist, one Claude
+  Desktop `.mcpb` bundle per platform, then a GitHub release carrying all of
+  them. Installable pinned to the tag with `pip install
+  "git+https://github.com/ckgerteis/semantic-scholar-mcp@vX.Y.Z"` or `uvx --from`
+  the same URL. The release is what fires the Zenodo webhook. Nothing is
+  published to a package index.
+- **Suite install.** `install.py` is the cross-platform port of `install.ps1`
+  (Windows, macOS, Linux; same behaviour, importable). The family is also
+  installable as one package, `bibliograph-mcp`, whose `bibliograph install`
+  registers all six with one receipts folder.
 - **`mediation.py` and `response-schema.json` vendored**, byte-identical to the
   copies in cinii-mcp, jstage-mcp, ndl-mcp, korea-scholarship-mcp and
   openalex-mcp. The README's claim that the family shares one envelope is now
