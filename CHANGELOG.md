@@ -7,6 +7,13 @@ the text and, where a version DOI exists, cited by it.
 Releases earlier than those below are on the repository's releases page; this
 file begins where the record is precise enough to be worth writing down.
 
+## 2.0.1 — 2026-09-05
+
+No change to the server. The 2.0.0 tag was cut before this repository was
+enabled on Zenodo, so that release was never archived and no DOI was minted
+for it. This release exists to fire the Zenodo webhook. The code is identical
+to 2.0.0 apart from the version strings and the pinned install lines below.
+
 ## 2.0.0 — 2026-09-04
 
 **Breaking: every tool now returns the family's JSON response envelope.** 1.x
