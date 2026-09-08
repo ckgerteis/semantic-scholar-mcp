@@ -41,7 +41,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "jsonschema>=4"]
+test = ["pytest>=9.1.1", "jsonschema>=4"]
 
 [project.scripts]
 semantic-scholar-mcp = "semantic_scholar_mcp:main"
