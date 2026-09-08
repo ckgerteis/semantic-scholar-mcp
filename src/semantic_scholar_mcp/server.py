@@ -1,5 +1,5 @@
 """
-Semantic Scholar MCP Server (v2.0.1)
+Semantic Scholar MCP Server (v2.1.0)
 ====================================
 An MCP server for the Semantic Scholar Academic Graph API: paper search,
 citation and reference traversal, author lookup, and recommendations.
@@ -33,7 +33,7 @@ except ModuleNotFoundError:  # mcp SDK 2.x removed mcp.server.fastmcp
 
 from . import mediation as M
 
-__version__ = "2.0.1"
+__version__ = "2.1.0"
 
 # ==============================================================================
 # Configuration
@@ -47,7 +47,7 @@ TIMEOUT = 30.0
 # shared pool to everyone else. The interval is enforced for both: without a
 # key the pool is stricter, not looser, so nothing is gained by skipping it.
 RATE_LIMIT_DELAY = 1.1
-ATTRIBUTION = "Data via the Semantic Scholar Academic Graph API, Allen Institute for AI."
+ATTRIBUTION = "Data via the Semantic Scholar Academic Graph API (https://www.semanticscholar.org/), Allen Institute for AI."
 
 # Paper search is relevance-ranked over title, abstract and venue: neither a
 # catalogued conjunction nor a plain full-text hit, and the total is an
