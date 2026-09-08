@@ -30,7 +30,9 @@ def _validate(env: dict) -> None:
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    # asyncio.run, not get_event_loop(): since 3.14 there is no implicit loop
+    # in the main thread, and get_event_loop() raises instead of creating one.
+    return asyncio.run(coro)
 
 
 @pytest.fixture
