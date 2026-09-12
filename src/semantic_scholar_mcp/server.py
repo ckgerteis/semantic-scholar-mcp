@@ -1,5 +1,5 @@
 """
-Semantic Scholar MCP Server (v2.1.1)
+Semantic Scholar MCP Server (v2.1.2)
 ====================================
 An MCP server for the Semantic Scholar Academic Graph API: paper search,
 citation and reference traversal, author lookup, and recommendations.
@@ -33,7 +33,7 @@ except ModuleNotFoundError:  # mcp SDK 2.x removed mcp.server.fastmcp
 
 from . import mediation as M
 
-__version__ = "2.1.1"
+__version__ = "2.1.2"
 
 # ==============================================================================
 # Configuration
