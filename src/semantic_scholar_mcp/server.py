@@ -324,6 +324,37 @@ def _not_shape(expected: str, data: Any) -> dict:
     )
 
 
+# A record whose fields have the wrong types (a string where an object
+# belongs, a number for a title) raised out of the builder and took the whole
+# page with it: the caller got an exception, no envelope and no receipt.
+_UNREADABLE = (AttributeError, TypeError, ValueError, KeyError, IndexError, OverflowError)
+
+
+def _build_all(records: list, build, id_key: str) -> tuple[list[dict], Optional[dict]]:
+    """Build every record that can be read; skip and name the rest.
+
+    Returns (items, diagnostic-or-None). The diagnostic is RECORD_UNREADABLE,
+    naming each skipped record by its position on the page and, where it has
+    one, its identifier."""
+    items: list[dict] = []
+    bad: list[str] = []
+    for pos, rec in enumerate(records, 1):
+        try:
+            items.append(build(rec))  # a non-object record fails here too
+        except _UNREADABLE:
+            rid = rec.get(id_key) if isinstance(rec, dict) else None
+            bad.append(f"#{pos}" + (f" ({rid[:100]})" if isinstance(rid, str) and rid else ""))
+    if not bad:
+        return items, None
+    named = "; ".join(bad[:10]) + ("; and more" if len(bad) > 10 else "")
+    return items, M.diag(
+        "warning", "RECORD_UNREADABLE",
+        f"{len(bad)} of {len(records)} record(s) could not be read and were left out: {named}.",
+        "The upstream record is malformed, not absent. The other records are complete; "
+        "look the omitted ones up by identifier or retry later.",
+    )
+
+
 def _envelope(
     *,
     operation: str,
@@ -357,11 +388,13 @@ def _envelope(
     if not err and expect and not _SHAPES[expect][1](data):
         err = _not_shape(_SHAPES[expect][0], data)
         records, total = [], 0
-    items = [build(r, matched_in) for r in records if isinstance(r, dict)]
+    items, bad = _build_all(records, lambda r: build(r, matched_in), "paperId")
     ds: list[dict] = []
     if err:
         ds.append(err)
     ds.extend(extra_diags or [])
+    if bad:
+        ds.append(bad)
     if not err and total is None:
         more = isinstance(data, dict) and data.get("next") is not None
         total = len(items)
@@ -371,7 +404,7 @@ def _envelope(
             "records returned" + (", and the API offers a further page." if more else "."),
             "Page with offset to enumerate the set." if more else None,
         ))
-    if not err and not items:
+    if not err and not items and not bad:
         ds.append(M.diag(
             "warning", "ZERO_RESULTS",
             "No records for this query.",
