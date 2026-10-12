@@ -20,9 +20,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import sys
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote, quote_plus
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -112,9 +114,29 @@ def _lock() -> asyncio.Lock:
 
 
 def _redact(text: str) -> str:
-    if API_KEY and API_KEY in text:
-        text = text.replace(API_KEY, "[redacted]")
+    """Remove the key in every form a URL or echo could carry it."""
+    if API_KEY:
+        for form in {API_KEY, quote(API_KEY, safe=""), quote_plus(API_KEY), quote(API_KEY)}:
+            text = text.replace(form, "[redacted]")
     return text
+
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+QUERY_MAX = 2000
+
+
+def _path_id(v: str) -> str:
+    """An identifier goes into the URL path, so it may not walk the path."""
+    if _CONTROL.search(v):
+        raise ValueError("identifier contains a control character")
+    if any(seg in (".", "..") for seg in v.split("/")):
+        raise ValueError("identifier contains a '.' or '..' path segment")
+    return v
+
+
+def _seg(v: str) -> str:
+    """Percent-encode an identifier for the path; ':' and '/' are part of S2's ID forms."""
+    return quote(v, safe=":/")
 
 
 async def _api_request(
@@ -145,7 +167,7 @@ async def _api_request(
                     resp = await client.get(url, params=params, headers=headers)
                 else:
                     resp = await client.post(url, params=params, json=json_body, headers=headers)
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
         return None, M.diag(
             "error", "TRANSPORT_ERROR",
             f"Could not reach Semantic Scholar: {_redact(type(exc).__name__ + ': ' + str(exc))[:300]}",
@@ -169,7 +191,7 @@ async def _api_request(
     if resp.status_code >= 400:
         return None, M.diag(
             "error", "API_ERROR",
-            f"Semantic Scholar answered {resp.status_code}: {_redact(resp.text[:300])}",
+            f"Semantic Scholar answered {resp.status_code}: {_redact(resp.text)[:300]}",
             None,
         )
     try:
@@ -269,6 +291,39 @@ def _item_from_author(a: dict, matched_in: str) -> dict:
 # ==============================================================================
 
 
+_PAGE_KEYS = ("data", "total", "offset", "next")
+
+# expect -> (what it is called in a diagnostic, test). A page is lenient on
+# purpose: a search with no hits may omit `data`, so any page key will do, but
+# a `data` that is present must be a list.
+_SHAPES = {
+    "page": ("a results page", lambda d: isinstance(d, dict)
+             and any(k in d for k in _PAGE_KEYS)
+             and isinstance(d.get("data", []), list)),
+    "paper": ("a paper record", lambda d: isinstance(d, dict) and isinstance(d.get("paperId"), str)),
+    "author": ("an author record", lambda d: isinstance(d, dict) and isinstance(d.get("authorId"), str)),
+    "recommendations": ("a recommendations list", lambda d: isinstance(d, dict)
+                        and isinstance(d.get("recommendedPapers"), list)),
+}
+
+
+def _not_shape(expected: str, data: Any) -> dict:
+    said = ""
+    if isinstance(data, dict):
+        msg = data.get("error") or data.get("message")
+        if msg:
+            said = f' It said: "{_redact(str(msg))[:200]}".'
+        shape = f"an object with keys {sorted(map(str, data))[:6]}"
+    else:
+        shape = "null" if data is None else f"a {type(data).__name__}"
+    return M.diag(
+        "error", "API_ERROR",
+        f"Semantic Scholar answered 200, but with {shape} rather than {expected}.{said}",
+        "The result of this query is unknown, not empty. Retry before "
+        "concluding anything about the literature.",
+    )
+
+
 def _envelope(
     *,
     operation: str,
@@ -284,6 +339,7 @@ def _envelope(
     build=_item_from_paper,
     extra_diags: Optional[list] = None,
     coverage_note: Optional[str] = None,
+    expect: Optional[str] = None,
 ) -> str:
     """Assemble and emit one envelope.
 
@@ -292,7 +348,15 @@ def _envelope(
     recommendations). Then result.total is the returned count and a
     TOTAL_NOT_REPORTED diagnostic says so, so that a returned count is never
     mistaken for a corpus count.
+
+    `expect` names the shape a 200 body must have (see _SHAPES). A body of
+    another shape (null, an error object) is an answer that did not arrive;
+    reported as ZERO_RESULTS, or as an empty record marked OK, it read as an
+    absence in the literature.
     """
+    if not err and expect and not _SHAPES[expect][1](data):
+        err = _not_shape(_SHAPES[expect][0], data)
+        records, total = [], 0
     items = [build(r, matched_in) for r in records if isinstance(r, dict)]
     ds: list[dict] = []
     if err:
@@ -350,7 +414,7 @@ class PaperSearchInput(BaseModel):
     """Input for searching papers by keyword."""
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-    query: str = Field(..., description="Search query (e.g., 'bōsōzoku motorcycle gangs Japan')", min_length=1)
+    query: str = Field(..., description="Search query (e.g., 'bōsōzoku motorcycle gangs Japan')", min_length=1, max_length=QUERY_MAX)
     year_start: Optional[int] = Field(default=None, description="Filter: earliest publication year (e.g. 1970)")
     year_end: Optional[int] = Field(default=None, description="Filter: latest publication year (e.g. 2024)")
     fields_of_study: Optional[str] = Field(default=None, description="Comma-separated fields (e.g., 'History,Sociology')")
@@ -370,6 +434,8 @@ class PaperLookupInput(BaseModel):
         min_length=1,
     )
 
+
+    _ids = field_validator("paper_id")(_path_id)
 
 class BatchPaperInput(BaseModel):
     """Input for batch paper lookup."""
@@ -400,11 +466,13 @@ class CitationInput(BaseModel):
         return v
 
 
+    _ids = field_validator("paper_id")(_path_id)
+
 class AuthorSearchInput(BaseModel):
     """Input for searching authors."""
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-    query: str = Field(..., description="Author name to search", min_length=1)
+    query: str = Field(..., description="Author name to search", min_length=1, max_length=QUERY_MAX)
     limit: int = Field(default=10, description="Number of results (1-100)", ge=1, le=100)
     offset: int = Field(default=0, description="Pagination offset", ge=0)
 
@@ -416,6 +484,8 @@ class AuthorLookupInput(BaseModel):
     author_id: str = Field(..., description="Semantic Scholar Author ID", min_length=1)
 
 
+    _ids = field_validator("author_id")(_path_id)
+
 class AuthorPapersInput(BaseModel):
     """Input for getting an author's papers."""
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
@@ -425,6 +495,8 @@ class AuthorPapersInput(BaseModel):
     offset: int = Field(default=0, description="Pagination offset", ge=0)
 
 
+    _ids = field_validator("author_id")(_path_id)
+
 class RecommendInput(BaseModel):
     """Input for paper recommendations from a single seed paper."""
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
@@ -432,6 +504,8 @@ class RecommendInput(BaseModel):
     paper_id: str = Field(..., description="Seed paper identifier", min_length=1)
     limit: int = Field(default=10, description="Number of recommendations (1-100)", ge=1, le=100)
 
+
+    _ids = field_validator("paper_id")(_path_id)
 
 class MultiRecommendInput(BaseModel):
     """Input for recommendations from multiple seed papers."""
@@ -480,18 +554,18 @@ async def s2_search_papers(params: PaperSearchInput) -> str:
                      params={k: v for k, v in qp.items() if k != "fields"},
                      matching_mode=MODE_SEARCH, data=data, err=err,
                      records=records, total=total, start=params.offset + 1,
-                     matched_in="title_abstract_venue")
+                     matched_in="title_abstract_venue", expect="page")
 
 
 @mcp.tool(name="s2_get_paper", annotations=_ANN)
 async def s2_get_paper(params: PaperLookupInput) -> str:
     """Look up one paper by S2 ID, DOI, ArXiv ID, or URL. Returns the unified envelope with a single item, or NOT_FOUND."""
-    data, err = await _api_request("GET", f"{API_BASE}/paper/{params.paper_id}",
+    data, err = await _api_request("GET", f"{API_BASE}/paper/{_seg(params.paper_id)}",
                                    params={"fields": DEFAULT_PAPER_FIELDS})
     return _envelope(operation="get_paper", term=params.paper_id, params={"paper_id": params.paper_id},
                      matching_mode=MODE_LOOKUP, data=data, err=err,
                      records=[data] if isinstance(data, dict) else [], total=1 if isinstance(data, dict) else 0,
-                     matched_in="identifier")
+                     matched_in="identifier", expect="paper")
 
 
 @mcp.tool(name="s2_batch_papers", annotations=_ANN)
@@ -527,7 +601,7 @@ async def s2_batch_papers(params: BatchPaperInput) -> str:
 async def s2_citations(params: CitationInput) -> str:
     """Papers citing a given paper (citations) or cited by it (references). Returns the unified envelope. The API reports no total for this endpoint, so result.total is the returned count (TOTAL_NOT_REPORTED)."""
     qp = {"fields": BRIEF_PAPER_FIELDS, "limit": params.limit, "offset": params.offset}
-    data, err = await _api_request("GET", f"{API_BASE}/paper/{params.paper_id}/{params.direction}", params=qp)
+    data, err = await _api_request("GET", f"{API_BASE}/paper/{_seg(params.paper_id)}/{params.direction}", params=qp)
     records, _ = _page(data)
     key = "citingPaper" if params.direction == "citations" else "citedPaper"
     papers = [r.get(key) for r in records if isinstance(r, dict) and isinstance(r.get(key), dict)]
@@ -536,7 +610,7 @@ async def s2_citations(params: CitationInput) -> str:
                              "limit": params.limit, "offset": params.offset},
                      matching_mode=MODE_FILTER, data=data, err=err,
                      records=papers, total=None, start=params.offset + 1,
-                     matched_in="citation_graph")
+                     matched_in="citation_graph", expect="page")
 
 
 @mcp.tool(name="s2_search_authors", annotations=_ANN)
@@ -549,43 +623,44 @@ async def s2_search_authors(params: AuthorSearchInput) -> str:
                      params={k: v for k, v in qp.items() if k != "fields"},
                      matching_mode=MODE_SEARCH, data=data, err=err,
                      records=records, total=total, start=params.offset + 1,
-                     matched_in="name", build=_item_from_author)
+                     matched_in="name", build=_item_from_author, expect="page")
 
 
 @mcp.tool(name="s2_get_author", annotations=_ANN)
 async def s2_get_author(params: AuthorLookupInput) -> str:
     """Look up one author by Semantic Scholar Author ID. Returns the unified envelope with a single author item, or NOT_FOUND."""
-    data, err = await _api_request("GET", f"{API_BASE}/author/{params.author_id}",
+    data, err = await _api_request("GET", f"{API_BASE}/author/{_seg(params.author_id)}",
                                    params={"fields": DEFAULT_AUTHOR_FIELDS})
     return _envelope(operation="get_author", term=params.author_id, params={"author_id": params.author_id},
                      matching_mode=MODE_LOOKUP, data=data, err=err,
                      records=[data] if isinstance(data, dict) else [], total=1 if isinstance(data, dict) else 0,
-                     matched_in="identifier", build=_item_from_author)
+                     matched_in="identifier", build=_item_from_author, expect="author")
 
 
 @mcp.tool(name="s2_author_papers", annotations=_ANN)
 async def s2_author_papers(params: AuthorPapersInput) -> str:
     """Papers by one author, paginated. Returns the unified envelope; result.total is the returned count (TOTAL_NOT_REPORTED)."""
     qp = {"fields": BRIEF_PAPER_FIELDS, "limit": params.limit, "offset": params.offset}
-    data, err = await _api_request("GET", f"{API_BASE}/author/{params.author_id}/papers", params=qp)
+    data, err = await _api_request("GET", f"{API_BASE}/author/{_seg(params.author_id)}/papers", params=qp)
     records, _ = _page(data)
     return _envelope(operation="author_papers", term=params.author_id,
                      params={"author_id": params.author_id, "limit": params.limit, "offset": params.offset},
                      matching_mode=MODE_FILTER, data=data, err=err,
                      records=records, total=None, start=params.offset + 1,
-                     matched_in="authorship")
+                     matched_in="authorship", expect="page")
 
 
 @mcp.tool(name="s2_recommend_single", annotations=_ANN)
 async def s2_recommend_single(params: RecommendInput) -> str:
     """Papers similar to one seed paper, by Semantic Scholar's recommender. Returns the unified envelope (matching_mode similarity_ranked)."""
-    data, err = await _api_request("GET", f"{RECOMMENDATIONS_URL}/papers/forpaper/{params.paper_id}",
+    data, err = await _api_request("GET", f"{RECOMMENDATIONS_URL}/papers/forpaper/{_seg(params.paper_id)}",
                                    params={"fields": BRIEF_PAPER_FIELDS, "limit": params.limit})
     records = (data.get("recommendedPapers") or []) if isinstance(data, dict) else []
     return _envelope(operation="recommend_single", term=params.paper_id,
                      params={"paper_id": params.paper_id, "limit": params.limit},
                      matching_mode=MODE_RECOMMEND, data=data, err=err,
-                     records=records, total=None, matched_in="recommender")
+                     records=records, total=None, matched_in="recommender",
+                     expect="recommendations")
 
 
 @mcp.tool(name="s2_recommend_multi", annotations=_ANN)
@@ -602,7 +677,8 @@ async def s2_recommend_multi(params: MultiRecommendInput) -> str:
                      params={"positive_paper_ids": params.positive_paper_ids,
                              "negative_paper_ids": params.negative_paper_ids, "limit": params.limit},
                      matching_mode=MODE_RECOMMEND, data=data, err=err,
-                     records=records, total=None, matched_in="recommender")
+                     records=records, total=None, matched_in="recommender",
+                     expect="recommendations")
 
 
 # ==============================================================================
