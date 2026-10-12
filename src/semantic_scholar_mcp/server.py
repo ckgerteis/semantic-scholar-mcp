@@ -426,16 +426,28 @@ def _envelope(
     return M.emit(env)
 
 
+def _count(v: Any) -> Optional[int]:
+    """A count from the API: a non-negative integer, or None. JSON numbers such
+    as 1e309 parse as infinity, and int() of that raises OverflowError;
+    is_integer() is False for infinity and NaN. A negative or fractional count
+    is not a count either."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v if v >= 0 else None
+    if isinstance(v, float):
+        return int(v) if v.is_integer() and v >= 0 else None
+    if isinstance(v, str) and v.strip().isdecimal():
+        return int(v.strip())
+    return None
+
+
 def _page(data: Any) -> tuple[list, Optional[int]]:
     """(records, total-or-None) from a {total?, offset, next, data} page."""
     if not isinstance(data, dict):
         return [], None
     records = data.get("data") or []
-    total = data.get("total")
-    try:
-        return records, (int(total) if total is not None else None)
-    except (TypeError, ValueError):
-        return records, None
+    return records, _count(data.get("total"))
 
 
 # ==============================================================================
