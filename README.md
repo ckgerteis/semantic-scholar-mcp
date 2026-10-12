@@ -248,6 +248,7 @@ Typed and closed. A diagnostic is never prose the client has to parse.
 | `TOTAL_NOT_REPORTED` | info | The endpoint reports no corpus total (citations, references, an author's papers, batch, recommendations); `result.total` is the returned count, and the message says whether the API offers a further page. |
 | `ZERO_RESULTS` | warning | No records. Coverage of non-English humanities scholarship is thin; consult the CiNii, J-STAGE, NDL and KCI servers before concluding the literature is absent. |
 | `PARTIAL_NOT_FOUND` | warning | Batch: some identifiers resolved to no record; they are listed in `coverage_note`. |
+| `RECORD_UNREADABLE` | warning | One or more records on the page had fields of the wrong type and could not be read. They are left out and named by position and identifier; the other records are complete. A malformed record is not an absent one. |
 | `NOT_FOUND` | warning | A lookup by identifier answered 404. |
 | `RATE_LIMITED` | error | The API answered 429. Keyless callers share one pool and search endpoints are throttled first; a free key gives 1 request/second, which the server enforces. |
 | `API_ERROR` | error | The API answered, and answered with an error (or with a 200 that was not JSON). |
