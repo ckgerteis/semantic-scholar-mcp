@@ -269,6 +269,39 @@ def _item_from_author(a: dict, matched_in: str) -> dict:
 # ==============================================================================
 
 
+_PAGE_KEYS = ("data", "total", "offset", "next")
+
+# expect -> (what it is called in a diagnostic, test). A page is lenient on
+# purpose: a search with no hits may omit `data`, so any page key will do, but
+# a `data` that is present must be a list.
+_SHAPES = {
+    "page": ("a results page", lambda d: isinstance(d, dict)
+             and any(k in d for k in _PAGE_KEYS)
+             and isinstance(d.get("data", []), list)),
+    "paper": ("a paper record", lambda d: isinstance(d, dict) and isinstance(d.get("paperId"), str)),
+    "author": ("an author record", lambda d: isinstance(d, dict) and isinstance(d.get("authorId"), str)),
+    "recommendations": ("a recommendations list", lambda d: isinstance(d, dict)
+                        and isinstance(d.get("recommendedPapers"), list)),
+}
+
+
+def _not_shape(expected: str, data: Any) -> dict:
+    said = ""
+    if isinstance(data, dict):
+        msg = data.get("error") or data.get("message")
+        if msg:
+            said = f' It said: "{_redact(str(msg))[:200]}".'
+        shape = f"an object with keys {sorted(map(str, data))[:6]}"
+    else:
+        shape = "null" if data is None else f"a {type(data).__name__}"
+    return M.diag(
+        "error", "API_ERROR",
+        f"Semantic Scholar answered 200, but with {shape} rather than {expected}.{said}",
+        "The result of this query is unknown, not empty. Retry before "
+        "concluding anything about the literature.",
+    )
+
+
 def _envelope(
     *,
     operation: str,
@@ -284,6 +317,7 @@ def _envelope(
     build=_item_from_paper,
     extra_diags: Optional[list] = None,
     coverage_note: Optional[str] = None,
+    expect: Optional[str] = None,
 ) -> str:
     """Assemble and emit one envelope.
 
@@ -292,7 +326,15 @@ def _envelope(
     recommendations). Then result.total is the returned count and a
     TOTAL_NOT_REPORTED diagnostic says so, so that a returned count is never
     mistaken for a corpus count.
+
+    `expect` names the shape a 200 body must have (see _SHAPES). A body of
+    another shape (null, an error object) is an answer that did not arrive;
+    reported as ZERO_RESULTS, or as an empty record marked OK, it read as an
+    absence in the literature.
     """
+    if not err and expect and not _SHAPES[expect][1](data):
+        err = _not_shape(_SHAPES[expect][0], data)
+        records, total = [], 0
     items = [build(r, matched_in) for r in records if isinstance(r, dict)]
     ds: list[dict] = []
     if err:
@@ -480,7 +522,7 @@ async def s2_search_papers(params: PaperSearchInput) -> str:
                      params={k: v for k, v in qp.items() if k != "fields"},
                      matching_mode=MODE_SEARCH, data=data, err=err,
                      records=records, total=total, start=params.offset + 1,
-                     matched_in="title_abstract_venue")
+                     matched_in="title_abstract_venue", expect="page")
 
 
 @mcp.tool(name="s2_get_paper", annotations=_ANN)
@@ -491,7 +533,7 @@ async def s2_get_paper(params: PaperLookupInput) -> str:
     return _envelope(operation="get_paper", term=params.paper_id, params={"paper_id": params.paper_id},
                      matching_mode=MODE_LOOKUP, data=data, err=err,
                      records=[data] if isinstance(data, dict) else [], total=1 if isinstance(data, dict) else 0,
-                     matched_in="identifier")
+                     matched_in="identifier", expect="paper")
 
 
 @mcp.tool(name="s2_batch_papers", annotations=_ANN)
@@ -536,7 +578,7 @@ async def s2_citations(params: CitationInput) -> str:
                              "limit": params.limit, "offset": params.offset},
                      matching_mode=MODE_FILTER, data=data, err=err,
                      records=papers, total=None, start=params.offset + 1,
-                     matched_in="citation_graph")
+                     matched_in="citation_graph", expect="page")
 
 
 @mcp.tool(name="s2_search_authors", annotations=_ANN)
@@ -549,7 +591,7 @@ async def s2_search_authors(params: AuthorSearchInput) -> str:
                      params={k: v for k, v in qp.items() if k != "fields"},
                      matching_mode=MODE_SEARCH, data=data, err=err,
                      records=records, total=total, start=params.offset + 1,
-                     matched_in="name", build=_item_from_author)
+                     matched_in="name", build=_item_from_author, expect="page")
 
 
 @mcp.tool(name="s2_get_author", annotations=_ANN)
@@ -560,7 +602,7 @@ async def s2_get_author(params: AuthorLookupInput) -> str:
     return _envelope(operation="get_author", term=params.author_id, params={"author_id": params.author_id},
                      matching_mode=MODE_LOOKUP, data=data, err=err,
                      records=[data] if isinstance(data, dict) else [], total=1 if isinstance(data, dict) else 0,
-                     matched_in="identifier", build=_item_from_author)
+                     matched_in="identifier", build=_item_from_author, expect="author")
 
 
 @mcp.tool(name="s2_author_papers", annotations=_ANN)
@@ -573,7 +615,7 @@ async def s2_author_papers(params: AuthorPapersInput) -> str:
                      params={"author_id": params.author_id, "limit": params.limit, "offset": params.offset},
                      matching_mode=MODE_FILTER, data=data, err=err,
                      records=records, total=None, start=params.offset + 1,
-                     matched_in="authorship")
+                     matched_in="authorship", expect="page")
 
 
 @mcp.tool(name="s2_recommend_single", annotations=_ANN)
@@ -585,7 +627,8 @@ async def s2_recommend_single(params: RecommendInput) -> str:
     return _envelope(operation="recommend_single", term=params.paper_id,
                      params={"paper_id": params.paper_id, "limit": params.limit},
                      matching_mode=MODE_RECOMMEND, data=data, err=err,
-                     records=records, total=None, matched_in="recommender")
+                     records=records, total=None, matched_in="recommender",
+                     expect="recommendations")
 
 
 @mcp.tool(name="s2_recommend_multi", annotations=_ANN)
@@ -602,7 +645,8 @@ async def s2_recommend_multi(params: MultiRecommendInput) -> str:
                      params={"positive_paper_ids": params.positive_paper_ids,
                              "negative_paper_ids": params.negative_paper_ids, "limit": params.limit},
                      matching_mode=MODE_RECOMMEND, data=data, err=err,
-                     records=records, total=None, matched_in="recommender")
+                     records=records, total=None, matched_in="recommender",
+                     expect="recommendations")
 
 
 # ==============================================================================
