@@ -35,7 +35,7 @@ except ModuleNotFoundError:  # mcp SDK 2.x removed mcp.server.fastmcp
 
 from . import mediation as M
 
-__version__ = "2.1.2"
+__version__ = "2.2.0"
 
 # ==============================================================================
 # Configuration
